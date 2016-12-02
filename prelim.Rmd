@@ -1,0 +1,157 @@
+---
+title: "Preliminary data analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Reading Libraries
+
+We import the necessary libraries to conduct our analysis.
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(rworldmap)
+```
+
+## Importing the data.
+
+We import the data and understand what its made of. This will give us an idea of what variables we need to change so that we can effectively read it.
+
+```{r}
+mountains <- read.csv('Mountains.csv',header = T,stringsAsFactors = F)
+str(mountains)
+```
+
+We see that the variables that are supposed to be numeric in nature are character types. We need to do something about the coordinates variables too.
+
+```{r}
+mountains$Ascents.bef..2004 <- gsub('>>','',mountains$Ascents.bef..2004)
+mountains$Ascents.bef..2004<- as.numeric(mountains$Ascents.bef..2004)
+## First Acsent
+mountains$First.ascent <- as.numeric(mountains$First.ascent)
+```
+
+We need to change the way we view the coordinates variable. There seems to be an encoding issue on the system.
+
+
+```{r}
+Encoding(mountains$Coordinates)<-'UTF-8'
+mountains$Coordinates = gsub("°", ".", mountains$Coordinates)
+
+mountains$Lat <- sapply(mountains$Coordinates, function(x) strsplit(x, " ")[[1]][1])
+mountains$Lon <- sapply(mountains$Coordinates, function(x) strsplit(x, " ")[[1]][2])
+mountains$Lat = gsub("???", "", mountains$Lat)
+mountains$Lon = gsub("???", "", mountains$Lon)
+mountains$Lat <- gsub('N',"",mountains$Lat)
+mountains$Lon <- gsub('E',"",mountains$Lon)
+mountains$Lat <- substr(mountains$Lat,1,5)
+mountains$Lon <- substr(mountains$Lon,1,5)
+mountains$Lat <- as.numeric(mountains$Lat)
+mountains$Lon <- as.numeric(mountains$Lon)
+mountains <- na.omit(mountains)
+```
+
+Now that we have converted our data to a more readable format, we will start to get some insights into the data by asking questions.
+
+## How are the mountain heights distributed?
+
+This will give us an idea of the range of heights we are dealing with.
+
+```{r}
+plot_ly(x=mountains$Height..m.,type='histogram')
+```
+
+We see that most of the heights fall between 7200m and 8200m. There are outliers that lie between 8400m and 8899m.
+
+## What are the number of first attempts by year?
+
+```{r}
+temp <- mountains %>% select(First.ascent)
+temp <- na.omit(temp)
+temp <- temp %>% group_by(First.ascent) %>% summarise(n=n())
+p <- plot_ly(temp, x = First.ascent, y = n, name = "Number of First Ascents by Year")
+p %>%
+  layout(title = "Number of First Ascents by Year",
+         showlegend = FALSE) %>%
+  dplyr::filter(n == max(n)) %>%
+  layout(annotations = list(x = First.ascent, y = n, text = "Peak", showarrow = T))
+```
+
+We see that 7 first attempts were made in the year 1960. This happens to be the highest.
+
+## Is there a correlation between the number of Ascents and failed attempts before 2004?
+
+Let's check this out.
+
+```{r}
+temp <- mountains %>% select(Ascents.bef..2004,Failed.attempts.bef..2004,Height..m.)
+p <- plot_ly(temp, x = Ascents.bef..2004, y = Failed.attempts.bef..2004, name = "Number of First Ascents by Year",mode='markers',color =Height..m.,text=paste('Height:',Height..m.))
+p
+```
+
+We see a linear trend here. This trend is probably due to the outlier we have. Let's explore more without this outlier.
+
+```{r}
+temp <- subset(temp,Ascents.bef..2004<80)
+temp <- subset(temp,Failed.attempts.bef..2004<80)
+p <- plot_ly(temp, x = Ascents.bef..2004, y = Failed.attempts.bef..2004, name = "Number of First Ascents by Year",mode='markers',color =Height..m.,text=paste('Height:',Height..m.))
+p
+```
+
+We see something inspiring here.The above plot shows that people are more ambitious to attempt scaling higher mountains. There fore, the number of failed attempts of higher mountains (>8000m) tend to be higher. Here we are assuming that a failed attempt is not counted as a climb.
+
+## Where are these mountains located?
+
+Let's take a look at what mountains come under this category.
+
+```{r}
+temp <- mountains %>% filter(Height..m.>8000)
+temp <- temp %>% select(Mountain,Height..m.,Lat,Lon)
+plot_ly(temp, x = Mountain,y=Height..m., type = "bar")
+
+```
+
+
+
+
+
+Where are they located?
+
+
+
+```{r}
+newmap <- getMap(resolution='high')
+plot(newmap)
+points(temp$Lon,temp$Lat,col='red',cex=1.1)
+
+```
+
+We see that these mountains form the Himalaya chain. This chain is located at the India-Nepal-China border. This
+chain of mountains attracts hundreds of mountaineering enthusiasts ever year.
+
+## Is topological prominence related to the number of ascents?
+
+What is topological prominence? Wikipedia defines it as ..<i>'In topography, prominence[a] characterizes the height of a mountain or hill's summit by the vertical distance between it and the lowest contour line encircling it but containing no higher summit within it. It is a measure of the independence of a summit. A peak's key col is a unique point on this contour line and the parent peak is some higher mountain, selected according to various objective criteria............Peaks with low prominences are either subsidiary tops of some higher summit or relatively insignificant independent summits. Peaks with high prominences tend to be the highest points around and are likely to have extraordinary views.'</i>
+
+```{r}
+temp <- mountains %>% select(Prominence..m.,Ascents.bef..2004)
+ggplot(temp, aes(x=Prominence..m., y=Ascents.bef..2004)) + geom_point(colour="grey60") +
+  stat_smooth(method=lm, se=FALSE, colour="black")+ggtitle(paste('R:',cor(mountains$Prominence..m.,mountains$Ascents.bef..2004)))
+
+```
+
+We see that there is some correlation between the prominence height and the number of ascents before 2004. This is probably due to the better views from mountains with higher prominence height.
+
+Thank you for reading! Have a great weekend !
+
+Sources:
+
+https://www.kaggle.com/mrisdal/d/abcsds/highest-mountains/where-in-the-world
+
+https://en.wikipedia.org/wiki/Topographic_prominence
+
